@@ -1,0 +1,458 @@
+/screen
+
+                                  __/__/____                       DRLONSHT.RPT
+
+                   ****  LONG SHORT REPORT PRINTING  ****
+
+                             PRESS <ESC> TO ABORT
+
+/header                                                                        
+                                                                                                          LONG SHORT REPORT       __/__/____                      
+                                                                                                         ===================
+
+ORDERS                                                                                      TRANSIT                                                         STOCK
+======                                                                                      =======                                                         =====
+Customer                                           Order      Due         Quantity   Price    Consignment  ETA UK    Qual     Mark             Available        Consignment  WH Ref.    Qual Arrival    Mark                 Available
+                                                                                                                                         Bales       Metres                                                            Bales       Metres   
+                                                                                                                    
+/header2
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+|  ____________________ ______________________________  |                                                                                         
+---------------------------------------------------------
+/body1
+__________ _______________________________________ __________ __-____  ___,___,___. ____.___ SALE
+/body2
+                                                                                            __________  __/__/____ ____ _______________  _____. ___,___,___.    __________ __________ ____ __/__/____ _______________  _____. ___,___,___.
+/body3
+                                                                                            ** ___,___,___.    **
+/body4
+__________ _______________________________________ __________ __-____                          ___,___,___. ____.___
+/TOTAL1
+                                                                     ------------              ------------                                     ------------                                                                  ------------
+                                                               SALES ___,___,___.    PURCHASES ___,___,___.                  TRANSIT AVAILAIBLE ___,___,___.                                                  STOCK AVAILABLE ___,___,___.
+                                                                     ============              ============                                     ============                                                                  ============
+
+/*
+#INCLUDE COMMANDS.INC
+number tot_ord
+number tot_stk_s
+number tot_stk_t
+number totalpo
+number ord_mon
+number curr_yr
+number curr_mn
+number compare
+number comp1
+number comp2
+number comp3
+
+
+name screen
+name sys_date 
+number total_all
+
+indicator first   
+indicator second  
+indicator third  
+// above three indicators are for current, next and month after totals
+indicator first_time 
+// first_time is set when there is the first valid(printable) record 
+// in the dssalsub file for a stock code 
+indicator no_print_1
+indicator print_head
+string temp_stock
+string data 
+    
+    open dspurord
+    open dspursub
+    open dssalord
+    open dssalsub
+    open dscons
+    open dssys
+    open dscust
+    open dsstock
+    open dsstpar
+    open dssupl
+
+    PRINT 0 to total1.1
+    PRINT 0 to total1.2
+    PRINT 0 to total1.3
+    PRINT 0 to total1.4
+    integer linect linend
+
+    string strvar 2
+    string month 2
+
+
+    clearform screen
+    autopage screen
+    sysdate screen.1
+    calc (screen.1+693975) to screen.1
+    mid screen.1 to curr_mn 2 4
+    mid screen.1 to curr_yr 2 9
+
+    calc (curr_mn+1) to curr_mn
+    if curr_mn gt 12 begin
+      calc (curr_yr+1) to curr_yr
+      move 1 to curr_mn
+    end
+    calc ((curr_yr*100)+curr_mn) to comp1
+
+    calc (curr_mn+1) to curr_mn
+    if curr_mn gt 12 begin
+      calc (curr_yr+1) to curr_mn
+      move 1 to curr_mn
+    end
+    calc ((curr_yr*100)+curr_mn) to comp2
+
+    calc (curr_mn+1) to curr_mn
+    if curr_mn gt 12 begin
+      calc (curr_yr+1) to curr_yr
+      move 1 to curr_mn
+    end
+    calc ((curr_yr*100)+curr_mn) to comp3
+
+
+    outfile "DRLONSHT.DST"
+    character 27 to data 
+    write data 
+    character 77 to data 
+    write data 
+    character 15 to data 
+    write data 
+        page screen
+        move 66 to linend
+    
+    clear dssalsub
+    clear dsstock
+    clear dscons
+    clear dssalord
+    clear dsstpar
+    find ge dsstpar by index.1
+    [finderr] abort
+    sysdate header.1
+    calc (header.1 + 693975) to header.1
+    output header
+    move 11 to linect
+start:   
+    indicate first_time true 
+    keycheck
+    [keypress] gosub keych
+    if linect gt linend gosub heading
+    indicate print_head true
+    move dsstpar.stock_code               to temp_stock
+    clear dssalsub
+    move dsstpar.stock_code to dssalsub.stock_code
+    find gt dssalsub by index.4
+starta:
+    if dssalsub.stock_code ne temp_stock begin
+       indicate no_print_1 true
+       goto first_test
+    end       
+
+    if dssalsub.undelivered lt (dssalsub.ordered/20) ;
+      if dssalsub.undelivered lt 1000                 goto nextsub
+    if dssalsub.unallocated lt 1                      goto nextsub
+    clear dssalord
+    move dssalsub.order to dssalord.order
+    find eq dssalord by index.1
+    if dssalord.status eq "C" goto nextsub
+    print dssalsub.cust                     to body1.1
+    if dssalsub.cust ne dscust.code begin
+      clear dscust
+      move dssalsub.cust to dscust.code
+      find eq dscust by index.1
+    end
+    print dscust.name                       to body1.2
+    print dssalsub.order                    to body1.3
+    print dssalsub.year                     to body1.4
+    print dssalsub.month                    to body1.5
+    print dssalsub.unallocated              to body1.6
+    print dssalsub.price                    to body1.7
+    calc (tot_ord+dssalsub.unallocated)     to tot_ord
+    [print_head] begin
+      clear dsstock
+      move temp_stock to dsstock.stock_code
+      find gt dsstock by index.3
+      print dsstock.stock_code              to header2.1
+      print dsstock.description             to header2.2
+      if linect gt linend gosub heading
+      output header2
+      calc (linect+3)                       to linect
+      indicate print_head false
+    end
+  
+  
+// Just before we output the next line, we may be printing
+// Date based totals hence the code between here and the 
+// OUTPUT BODY1
+
+    calc ((dssalsub.year*100)+dssalsub.month) to compare
+    [first_time] begin
+      if compare ge comp1 indicate first true
+      if compare ge comp2 indicate second true
+      if compare ge comp3 indicate third true
+      indicate first_time false 
+    end 
+first_test:
+    [~first] begin
+      if ord_mon gt 0 begin
+        if compare ge comp1 begin
+          print ord_mon to body3.1 
+          if linect gt linend gosub heading
+          output body3
+          increment linect
+          indicate first true
+          move 0 to ord_mon
+          goto end_test
+        end
+      end
+    end
+second_test:
+    [~second] begin
+      if ord_mon gt 0 begin
+        if compare eq comp2 begin
+          print ord_mon to body3.1   
+          if linect gt linend gosub heading
+          output body3
+          increment linect
+          indicate first true
+          indicate second true
+          move 0 to ord_mon
+        end
+      end
+    end
+third_test:
+    [~third] begin
+      if ord_mon gt 0 begin
+        if compare eq comp3 begin
+          print ord_mon to body3.1 
+          if linect gt linend gosub heading
+          output body3
+          increment linect
+          indicate first true
+          indicate second true
+          indicate third true
+          move 0 to ord_mon
+        end
+      end
+    end
+end_test:
+    [no_print_1] begin
+      indicate no_print_1 false
+      goto startb
+    end
+    calc (ord_mon+dssalsub.unallocated)     to ord_mon
+    if linect gt linend gosub heading
+    output body1
+    increment linect
+    if linect gt linend gosub heading
+nextsub:    
+    find gt dssalsub by index.4
+    [~found] goto last_one
+    if dssalsub.stock_code ne temp_stock goto last_one
+    goto starta
+last_one:
+    if ord_mon gt 0 begin  
+      [~first] begin
+        print ord_mon to body3.1 
+        if linect gt linend gosub heading
+        output body3
+        increment linect
+        indicate first true
+        move 0 to ord_mon
+        goto startb
+      end
+    end
+    if ord_mon gt 0 begin
+      [~second] begin
+        print ord_mon to body3.1  
+        if linect gt linend gosub heading
+        output body3
+        increment linect
+        indicate third true
+        move 0 to ord_mon
+        goto startb
+      end
+    end
+    if ord_mon gt 0 begin
+      [~third] begin
+        print ord_mon to body3.1  
+        if linect gt linend gosub heading
+        output body3
+        increment linect
+        indicate third true
+        move 0 to ord_mon
+        goto startb
+      end
+    end
+startb:
+    indicate jump   false
+    indicate first  false
+    indicate second false
+    indicate third  false
+
+    clear dsstock
+    move temp_stock to dsstock.stock_code
+    find gt dsstock by index.3
+       
+startc:
+    blankform body2
+    if dsstock.stock_code ne temp_stock goto purchase
+    move dsstock.consignment_no to dscons.consignment
+    find eq dscons by index.1
+    if dsstock.avail_stock lt 1          goto find_next_stock
+    if dsstock.avail_units eq 0          goto find_next_stock 
+    if dscons.status eq "C"              goto find_next_stock
+    if dscons.status eq "T" begin
+      print dscons.consignment             to body2.1
+      print dscons.eta_uk                  to body2.2
+      print dsstock.quality_code           to body2.3
+      print dscons.mark                    to body2.4
+      print dsstock.avail_units            to body2.5
+      print dsstock.avail_stock            to body2.6
+      calc (dsstock.avail_stock+tot_stk_t) to tot_stk_t
+    end 
+    if dscons.status eq "E" begin 
+      print dscons.consignment             to body2.7 
+      print dscons.wh_receipt              to body2.8 
+      print dsstock.quality_code           to body2.9 
+      print dscons.date_arrived            to body2.10 
+      print dscons.mark                    to body2.11 
+      print dsstock.avail_units            to body2.12 
+      print dsstock.avail_stock            to body2.13 
+      calc (dsstock.avail_stock+tot_stk_s) to tot_stk_s 
+    end 
+      
+    if dscons.status eq "S" begin
+      print dscons.consignment             to body2.7
+      print dscons.wh_receipt              to body2.8
+      print dsstock.quality_code           to body2.9
+      print dscons.date_arrived            to body2.10
+      print dscons.mark                    to body2.11
+      print dsstock.avail_units            to body2.12
+      print dsstock.avail_stock            to body2.13
+      calc (dsstock.avail_stock+tot_stk_s) to tot_stk_s
+    end 
+    [print_head] begin
+      print dsstock.stock_code              to header2.1
+      print dsstock.description             to header2.2
+      if linect gt linend gosub heading
+      output header2
+      calc (linect+3)                       to linect
+      indicate print_head false
+    end
+    if linect gt linend gosub heading
+    output body2
+    increment linect
+    keycheck
+    [keypress] gosub keych
+    if linect gt linend gosub heading
+
+find_next_stock:
+    find gt dsstock by index.3
+    if dsstock.stock_code ne temp_stock goto purchase
+    [~found] goto purchase
+    clear dscons
+    move dsstock.consignment_no to dscons.consignment
+    find eq dscons by index.1
+    goto startc
+
+purchase:
+      blankform body2
+      clear dspursub
+      move temp_stock to dspursub.stock_code
+      repeat
+        indicate ok_next false
+        find gt dspursub by index.2
+        [found] begin
+          if dspursub.stock_code eq temp_stock begin
+            indicate ok_next true
+            [print_head] begin
+            clear dsstock
+            move temp_stock to dsstock.stock_code
+            find gt dsstock by index.3
+            print dsstock.stock_code              to header2.1
+            print dsstock.description             to header2.2
+            if linect gt linend gosub heading
+            output header2
+            calc (linect+3)                       to linect
+            indicate print_head false
+          end
+          calc (totalpo + dspursub.ordered) to totalpo
+          relate dspursub
+          print dspurord.supp    to body4.1
+          print dssupl.name      to body4.2
+          print dspursub.order   to body4.3
+          print dspursub.eta_mm  to body4.4
+          print dspursub.eta_yy  to body4.5
+          print dspursub.ordered to body4.6
+          print dspursub.price   to body4.7
+          increment linect
+          if linect gt linend gosub heading
+          output body4
+        end
+      end
+      until [~ok_next]
+
+
+stock_change:
+      indicate first_time true 
+      calc (tot_ord+tot_stk_t+tot_stk_s+totalpo) to total_all
+      if total_all gt 1 begin
+        print tot_ord   to total1.1
+        print totalpo   to total1.2
+        print tot_stk_t to total1.3
+        print tot_stk_s to total1.4
+        if linect gt linend gosub heading
+        output total1
+        calc (linect+4) to linect
+        move 0 to ord_mon 
+        move 0 to tot_ord
+        move 0 to tot_stk_s
+        move 0 to tot_stk_t
+        move 0 to totalpo
+      end
+    clear dsstock
+    clear dscons
+    move temp_stock                      to dsstpar.stock_code
+    find gt dsstpar by index.1
+    [~found] goto exit
+    if dsstpar.stock_code lt temp_stock goto exit
+    goto start
+    
+exit:
+    abort
+
+keych:
+    return
+
+heading:
+    sysdate header.1
+    calc (header.1 + 693975) to header.1
+    FORMFEED
+    output header
+    keycheck
+    [keypress] gosub keych
+    move 11 to linect
+    return
+
+keyproc key.escape
+    return
+
+
+keyproc key.clear 
+    return starta
+
+keyproc key.field
+    backfield
+    return
+
+keyproc key.find
+    error 100
+    entagain
+    return
+
+
+
+
